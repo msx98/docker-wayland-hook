@@ -1,4 +1,6 @@
 #!/bin/bash
+XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/1000}
+WAYLAND_SOCK="${XDG_RUNTIME_DIR}/wayland-0"
 
 set -e
 
@@ -11,21 +13,17 @@ chmod 777 "./Home/$GUEST"
 VIDEO_GID=$(getent group video | cut -d: -f3)
 RENDER_GID=$(getent group render | cut -d: -f3)
 
-setfacl -m u:100999:rw /run/user/1000/wayland-0
+setfacl -m u:100999:rw "${WAYLAND_SOCK}"
 
 docker run -it --rm \
   --user 0:0 \
   --security-opt seccomp=unconfined \
-  --security-opt label=disable \
   --device /dev/dri:/dev/dri \
   --group-add "$VIDEO_GID" \
   --group-add "$RENDER_GID" \
-  -v /run/user/1000/wayland-0:/run/user/1000/wayland-0:rw \
-  -v "./Home/$GUEST":/home/wayland \
-  -e XDG_RUNTIME_DIR=/run/user/1000 \
-  -e WAYLAND_DISPLAY=wayland-0 \
-  -e GDK_SCALE=2 \
-  -e XCURSOR_SIZE=48 \
+  -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:rw \
+  -v "${WAYLAND_SOCK}":/run/user/0/wayland-0:rw \
+  -v "./Home/$GUEST":/home/user \
   wayland-hook:$GUEST \
   dbus-run-session $@
 
