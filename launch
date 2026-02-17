@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e
+
+GUEST="$1"
+shift
+mkdir -p "./Home/$GUEST"
+chmod 777 "./Home/$GUEST"
+
+# 1. Get Host GIDs
+VIDEO_GID=$(getent group video | cut -d: -f3)
+RENDER_GID=$(getent group render | cut -d: -f3)
+
+setfacl -m u:100999:rw /run/user/1000/wayland-0
+
+docker run -it --rm \
+  --user 0:0 \
+  --security-opt seccomp=unconfined \
+  --security-opt label=disable \
+  --device /dev/dri:/dev/dri \
+  --group-add "$VIDEO_GID" \
+  --group-add "$RENDER_GID" \
+  -v /run/user/1000/wayland-0:/run/user/1000/wayland-0:rw \
+  -v "./Home/$GUEST":/home/wayland \
+  -e XDG_RUNTIME_DIR=/run/user/1000 \
+  -e WAYLAND_DISPLAY=wayland-0 \
+  -e GDK_SCALE=2 \
+  -e XCURSOR_SIZE=48 \
+  wayland-hook:$GUEST \
+  dbus-run-session $@
+

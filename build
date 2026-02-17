@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Exit on any error
+set -e
+
+# Check if argument is provided
+if [ -z "$1" ]; then
+    echo "Usage: ./build.sh <base_name>"
+    echo "Example: ./build.sh alpine (builds dockerfiles/alpine and dockerfiles/alpine.*)"
+    exit 1
+fi
+
+cd src
+
+BASE_NAME=$1
+BASE_FILE="dockerfiles/$BASE_NAME"
+
+# 1. Verify base file exists
+if [ ! -f "$BASE_FILE" ]; then
+    echo "Error: Base Dockerfile '$BASE_FILE' not found."
+    exit 1
+fi
+
+# 2. Build the base image and tag it as 'wayland-hook'
+echo "------------------------------------------"
+echo "Building base image: wayland-hook from $BASE_FILE"
+echo "------------------------------------------"
+docker build -t wayland-hook -f "$BASE_FILE" .
+
+# 3. Find and build all derivative images (e.g., alpine.firefox, alpine.vlc)
+# We look for files matching: dockerfiles/<base_name>.*
+for f in dockerfiles/"$BASE_NAME".*; do
+    # Check if the glob found anything
+    [ -e "$f" ] || continue
+
+    # Extract the suffix (the part after the dot)
+    # Example: dockerfiles/alpine.firefox -> firefox
+    EXT="${f##*.}"
+    
+    # Define the tag (e.g., wayland-hook:firefox)
+    TAG="wayland-hook:$EXT"
+
+    echo ""
+    echo "------------------------------------------"
+    echo "Building derivative: $TAG from $f"
+    echo "------------------------------------------"
+    
+    docker build -t "$TAG" -f "$f" .
+done
+
+echo ""
+echo "Build complete. Images tagged as 'wayland-hook' and 'wayland-hook:*'"
+

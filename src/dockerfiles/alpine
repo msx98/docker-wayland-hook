@@ -1,0 +1,33 @@
+FROM alpine:latest
+
+# Install core GUI dependencies, Hebrew fonts, and cursor themes
+RUN apk add --no-cache \
+    waypipe \
+    dbus \
+    dconf \
+    bash \
+    mesa-dri-gallium \
+    # Hebrew Fonts (Added Culmus for better compatibility)
+    font-noto-hebrew \
+    # Cursor and Theme fixes
+    adwaita-icon-theme \
+    hicolor-icon-theme \
+    gsettings-desktop-schemas \
+    ttf-dejavu \
+    fontconfig \
+    librsvg
+
+# Fix: Force GTK to use Adwaita and find it in the correct path
+RUN mkdir -p /usr/share/icons/default && \
+    echo "[Icon Theme]" > /usr/share/icons/default/index.theme && \
+    echo "Inherits=Adwaita" >> /usr/share/icons/default/index.theme
+
+# Set environment variables for Wayland and Cursor
+ENV MOZ_ENABLE_WAYLAND=1
+ENV XCURSOR_THEME=Adwaita
+ENV XCURSOR_SIZE=48
+ENV XCURSOR_PATH=/usr/share/icons
+
+# Refresh font cache
+RUN fc-cache -f
+

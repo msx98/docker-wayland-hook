@@ -1,0 +1,4 @@
+FROM wayland-hook
+
+# Install Firefox on top of the base
+RUN apk add --no-cache firefox
