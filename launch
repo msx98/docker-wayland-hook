@@ -23,7 +23,8 @@ docker run -it --rm \
   --group-add "$RENDER_GID" \
   -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:rw \
   -v "${WAYLAND_SOCK}":/run/user/0/wayland-0:rw \
-  -v "./Home/$GUEST":/home/user \
+  -v "./Home/$GUEST/user":/home/user \
+  -v "./Home/$GUEST/root":/root \
   wayland-hook:$GUEST \
   dbus-run-session $@
 
