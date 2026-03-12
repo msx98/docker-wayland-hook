@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Firefox (Contained)
-Icon=firefox
+Icon=org.mozilla.firefox
 Terminal=false
 Categories=Network;WebBrowser;
+StartupWMClass=Firefox
