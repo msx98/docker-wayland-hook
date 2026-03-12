@@ -63,7 +63,7 @@ podman run -i --rm \
   -v "$DBUS_PROXY_SOCK":/run/user/1000/bus \
   -v "${XDG_RUNTIME_DIR}/pulse/native:/run/user/1000/pulse/native" \
   -v "$(pwd)/Home/$NAME":/home/user:Z \
-  -e GTK_THEME="Adawita:dark" \
+  -e GTK_THEME="Adwaita:dark" \
   -e DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus" \
   -e PULSE_SERVER=unix:/run/user/1000/pulse/native \
   -e PIPEWIRE_REMOTE=/run/user/1000/pipewire-0 \
@@ -72,4 +72,4 @@ podman run -i --rm \
   -e PIPEWIRE_REMOTE=unix:/run/user/1000/pipewire-0 \
   "${PODMAN_EXTRA[@]}" \
   localhost/wayland-hook:$NAME \
-  dbus-run-session -- env GTK_THEME="Adawita:dark" "${CMD[@]}"
+  dbus-run-session -- env GTK_THEME="Adwaita:dark" "${CMD[@]}"
