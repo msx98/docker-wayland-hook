@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Chrome (Contained)
+Icon=google-chrome
+Terminal=false
+Categories=Network;WebBrowser;
+StartupWMClass=Google-chrome

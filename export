@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+REPO="$(cd "$(dirname "$0")" && pwd)"
+DEST="$HOME/.local/share/applications"
+mkdir -p "$DEST"
+
+for SPEC_DIR in "$REPO/specs"/*/; do
+    NAME="$(basename "$SPEC_DIR")"
+    DESKTOP_SRC="$SPEC_DIR/desktop"
+
+    if [ ! -f "$DESKTOP_SRC" ]; then
+        echo "Skipping $NAME: no desktop file found"
+        continue
+    fi
+
+    DESKTOP="$DEST/contain-$NAME.desktop"
+    {
+        cat "$DESKTOP_SRC"
+        echo "Path=$REPO"
+        echo "Exec=$REPO/launch $NAME"
+    } > "$DESKTOP"
+
+    echo "Installed: $DESKTOP"
+done
+
+update-desktop-database "$DEST"
+echo "Done."
