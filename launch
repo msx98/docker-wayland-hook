@@ -51,14 +51,13 @@ while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
 
 echo "Running podman run"
 podman run -i --rm \
-  --security-opt seccomp=unconfined \
   --security-opt label=type:container_runtime_t \
   --name "contain-$NAME" \
   --cap-drop ALL \
   --security-opt no-new-privileges \
   --group-add "$RENDER_GID" \
   --userns keep-id \
-  --net host \
+  --net pasta \
   -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:ro \
   -v /run/user/1000/pipewire-0:/run/user/1000/pipewire-0:rw \
   -v "$DBUS_PROXY_SOCK":/run/user/1000/bus \
