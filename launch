@@ -4,27 +4,73 @@ WAYLAND_SOCK="${XDG_RUNTIME_DIR}/wayland-0"
 
 set -e
 
-GUEST="$1"
-shift
-mkdir -p "./Home/$GUEST"
-chmod 777 "./Home/$GUEST"
+NAME="$1"
+SPEC="./specs/$NAME"
 
-# 1. Get Host GIDs
-VIDEO_GID=$(getent group video | cut -d: -f3)
+if [ ! -d "$SPEC" ]; then
+    echo "Error: no spec found at $SPEC"
+    exit 1
+fi
+
+# Build image if it doesn't exist
+if ! podman image exists "localhost/wayland-hook:$NAME"; then
+    echo "Image wayland-hook:$NAME not found, building..."
+    ./build "$NAME"
+fi
+
+mkdir -p "./Home/$NAME"
+chmod 777 "./Home/$NAME"
+
+# Load spec files
+mapfile -t CMD          < "$SPEC/run.args"
+mapfile -t DBUS_NAMES   < "$SPEC/run.dbus"
+mapfile -t PODMAN_EXTRA < <([ -f "$SPEC/run.podman" ] && grep -v '^#' "$SPEC/run.podman" || true)
+
+# Strip blank lines
+CMD=("${CMD[@]//[$'\n\r']/}")
+CMD=("${CMD[@]}" )
+readarray -t CMD < <(printf '%s\n' "${CMD[@]}" | grep -v '^$')
+readarray -t DBUS_NAMES < <(printf '%s\n' "${DBUS_NAMES[@]}" | grep -v '^$')
+readarray -t PODMAN_EXTRA < <(printf '%s\n' "${PODMAN_EXTRA[@]}" | grep -v '^$')
+
+# Get host GIDs
 RENDER_GID=$(getent group render | cut -d: -f3)
 
 setfacl -m u:100999:rw "${WAYLAND_SOCK}"
 
-docker run -it --rm \
-  --user 0:0 \
-  --security-opt seccomp=unconfined \
-  --device /dev/dri:/dev/dri \
-  --group-add "$VIDEO_GID" \
-  --group-add "$RENDER_GID" \
-  -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:rw \
-  -v "${WAYLAND_SOCK}":/run/user/0/wayland-0:rw \
-  -v "./Home/$GUEST/user":/home/user \
-  -v "./Home/$GUEST/root":/root \
-  wayland-hook:$GUEST \
-  dbus-run-session $@
+# Start D-Bus proxy
+DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
+PROXY_ARGS=(--filter)
+for name in "${DBUS_NAMES[@]}"; do
+    PROXY_ARGS+=("--talk=$name")
+done
+xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_PROXY_SOCK" "${PROXY_ARGS[@]}" &
+DBUS_PROXY_PID=$!
+trap "kill $DBUS_PROXY_PID 2>/dev/null; rm -f $DBUS_PROXY_SOCK" EXIT
+while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
 
+echo "Running podman run"
+podman run -i --rm \
+  --security-opt seccomp=unconfined \
+  --security-opt label=type:container_runtime_t \
+  --name "contain-$NAME" \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --group-add "$RENDER_GID" \
+  --userns keep-id \
+  --net host \
+  -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:ro \
+  -v /run/user/1000/pipewire-0:/run/user/1000/pipewire-0:rw \
+  -v "$DBUS_PROXY_SOCK":/run/user/1000/bus \
+  -v "${XDG_RUNTIME_DIR}/pulse/native:/run/user/1000/pulse/native" \
+  -v "$(pwd)/Home/$NAME":/home/user:Z \
+  -e GTK_THEME="Adawita:dark" \
+  -e DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus" \
+  -e PULSE_SERVER=unix:/run/user/1000/pulse/native \
+  -e PIPEWIRE_REMOTE=/run/user/1000/pipewire-0 \
+  -e XDG_RUNTIME_DIR=/run/user/1000 \
+  -e WAYLAND_DISPLAY=wayland-0 \
+  -e PIPEWIRE_REMOTE=unix:/run/user/1000/pipewire-0 \
+  "${PODMAN_EXTRA[@]}" \
+  localhost/wayland-hook:$NAME \
+  dbus-run-session -- env GTK_THEME="Adawita:dark" "${CMD[@]}"

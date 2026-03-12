@@ -1,1 +1,1 @@
-vmexec chrome google-chrome-stable --ozone-platform-hint=auto --ozone-platform=wayland --user-data-dir=/home/user/.config/google-chrome --test-type --no-sandbox --simulate-outdated-no-proxy-sandbox --class=vmchromium 
+./launch chrome
