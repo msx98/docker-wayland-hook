@@ -31,7 +31,7 @@ CMD=("${CMD[@]//[$'\n\r']/}")
 CMD=("${CMD[@]}" )
 readarray -t CMD < <(printf '%s\n' "${CMD[@]}" | grep -v '^$')
 readarray -t DBUS_NAMES < <(printf '%s\n' "${DBUS_NAMES[@]}" | grep -v '^$')
-readarray -t PODMAN_EXTRA < <(printf '%s\n' "${PODMAN_EXTRA[@]}" | grep -v '^$')
+readarray -t PODMAN_EXTRA < <(printf '%s\n' "${PODMAN_EXTRA[@]}" | grep -v '^$' | envsubst)
 
 # Get host GIDs
 RENDER_GID=$(getent group render | cut -d: -f3)
