@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y \
     fontconfig \
     librsvg2-common \
     bash \
+    libpipewire-0.3-0 \
+    pipewire-audio-client-libraries \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2. Fix: Force GTK to find the Adwaita theme

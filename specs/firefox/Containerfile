@@ -1,9 +1,15 @@
 FROM wayland-hook
 
-# Install Firefox from Mozilla PPA (Avoids Snap issues)
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository -y ppa:mozillateam/ppa && \
-    echo 'Package: firefox*\nPin: release o=LP-PPA-mozillateam\nPin-Priority: 1001' > /etc/apt/preferences.d/mozilla-firefox
+# Install Firefox from Mozilla's official apt repo (avoids Snap and keyserver issues)
+RUN apt-get update && apt-get install -y ca-certificates curl
+
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg \
+        -o /etc/apt/keyrings/packages.mozilla.org.asc && \
+    echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+        > /etc/apt/sources.list.d/mozilla.list && \
+    printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' \
+        > /etc/apt/preferences.d/mozilla
 
 RUN apt-get update && apt-get install -y firefox && \
     apt-get clean && rm -rf /var/lib/apt/lists/*

@@ -14,8 +14,6 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearm
 # 3. Install Google Chrome and PipeWire client libs
 RUN apt-get update && apt-get install -y \
     google-chrome-stable \
-    libpipewire-0.3-0 \
-    pipewire-audio-client-libraries \
     --no-install-recommends && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
