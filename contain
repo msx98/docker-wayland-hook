@@ -1,6 +1,4 @@
 #!/bin/bash
-XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/1000}
-WAYLAND_SOCK="${XDG_RUNTIME_DIR}/wayland-0"
 
 set -e
 
@@ -16,6 +14,15 @@ done
 
 NAME="$1"
 SPEC="./specs/$NAME"
+IMAGE="localhost/contain:$NAME"
+CONTAIN_HOME="$HOME/.local/share/contain/$NAME"
+DESKTOP_ENTRY_DIR=${DESKTOP_ENTRY_DIR:-"$HOME/.local/share/applications"}
+UID_HOST=$(id -u)
+UID_GUEST=${UID_GUEST:-$UID_HOST}
+XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$UID_HOST}
+WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+WAYLAND_SOCK="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+
 
 if [ ! -d "$SPEC" ]; then
     echo "Error: no spec found at $SPEC"
@@ -23,24 +30,26 @@ if [ ! -d "$SPEC" ]; then
 fi
 
 # Build image if it doesn't exist (or rebuild is forced)
-if [ "$REBUILD" -eq 1 ] || ! podman image exists "localhost/wayland-hook:$NAME"; then
-    [ "$REBUILD" -eq 1 ] && echo "Rebuilding image wayland-hook:$NAME..." \
-                         || echo "Image wayland-hook:$NAME not found, building..."
+if [ "$REBUILD" -eq 1 ] || ! podman image exists "$IMAGE"; then
+    [ "$REBUILD" -eq 1 ] && echo "Rebuilding image $IMAGE..." \
+                         || echo "Image $IMAGE not found, building..."
     ./build "$NAME"
 fi
 
 # Auto-export desktop entry if spec provides one
 if [ -f "$SPEC/desktop" ]; then
-    DEST="$HOME/.local/share/applications/contain-$NAME.desktop"
+    DEST="$DESKTOP_ENTRY_DIR/contain-$NAME.desktop"
     LAUNCH_PATH="$(realpath "$0")"
     {
         cat "$SPEC/desktop"
         echo "Exec=$LAUNCH_PATH $NAME"
     } > "$DEST"
+    update-desktop-database "$DESKTOP_ENTRY_DIR"
+    echo "Installed desktop entry: $DEST"
 fi
 
-mkdir -p "./Home/$NAME"
-chmod 777 "./Home/$NAME"
+mkdir -p "$CONTAIN_HOME"
+chmod 777 "$CONTAIN_HOME"
 
 # Load spec files
 mapfile -t CMD          < "$SPEC/run.args"
@@ -79,18 +88,18 @@ podman run -i --rm \
   --group-add "$RENDER_GID" \
   --userns keep-id \
   --net pasta \
-  -v "${WAYLAND_SOCK}":/run/user/1000/wayland-0:ro \
-  -v /run/user/1000/pipewire-0:/run/user/1000/pipewire-0:rw \
-  -v "$DBUS_PROXY_SOCK":/run/user/1000/bus \
-  -v "${XDG_RUNTIME_DIR}/pulse/native:/run/user/1000/pulse/native" \
-  -v "$(pwd)/Home/$NAME":/home/user:Z \
+  -v "${WAYLAND_SOCK}":/run/user/$UID_GUEST/$WAYLAND_DISPLAY:ro \
+  -v /run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw \
+  -v "$DBUS_PROXY_SOCK":/run/user/$UID_GUEST/bus \
+  -v "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native" \
+  -v "$CONTAIN_HOME":/home/user:Z \
   -e GTK_THEME="Adwaita:dark" \
-  -e DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus" \
-  -e PULSE_SERVER=unix:/run/user/1000/pulse/native \
-  -e PIPEWIRE_REMOTE=/run/user/1000/pipewire-0 \
-  -e XDG_RUNTIME_DIR=/run/user/1000 \
-  -e WAYLAND_DISPLAY=wayland-0 \
-  -e PIPEWIRE_REMOTE=unix:/run/user/1000/pipewire-0 \
+  -e DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_GUEST/bus" \
+  -e PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native \
+  -e PIPEWIRE_REMOTE=/run/user/$UID_GUEST/pipewire-0 \
+  -e XDG_RUNTIME_DIR=/run/user/$UID_GUEST \
+  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+  -e PIPEWIRE_REMOTE=unix:/run/user/$UID_GUEST/pipewire-0 \
   "${PODMAN_EXTRA[@]}" \
-  localhost/wayland-hook:$NAME \
-  dbus-run-session -- env GTK_THEME="Adwaita:dark" "${CMD[@]}"
+  $IMAGE \
+  dbus-run-session -- "${CMD[@]}"

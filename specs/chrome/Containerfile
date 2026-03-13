@@ -1,4 +1,5 @@
-FROM wayland-hook
+ARG BASE
+FROM $BASE
 
 # 1. Install dependencies for the Google repo
 RUN apt-get update && apt-get install -y \
