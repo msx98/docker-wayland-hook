@@ -113,7 +113,6 @@ COMMON_FLAGS+=("-v" "/run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewi
 COMMON_FLAGS+=("-v" "$DBUS_PROXY_SOCK:/run/user/$UID_GUEST/bus")
 COMMON_FLAGS+=("-v" "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native")
 COMMON_FLAGS+=("-v" "$CONTAIN_HOME:/home/user:Z")
-COMMON_FLAGS+=("-v" "$(realpath "$SPEC/init.sh"):/init.sh:ro")
 COMMON_FLAGS+=("-e" "GTK_THEME=Adwaita:dark")
 COMMON_FLAGS+=("-e" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_GUEST/bus")
 COMMON_FLAGS+=("-e" "PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native")
@@ -135,7 +134,7 @@ if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
         --user 0:0 \
         -v "$(realpath "$SPEC/setup.sh"):/setup.sh:ro" \
         "${COMMON_FLAGS[@]}"  \
-        bash /setup.sh
+        dbus-run-session -- bash /setup.sh
 fi
 
 if [ "$SHELL_MODE" -eq 1 ]; then
@@ -143,7 +142,9 @@ if [ "$SHELL_MODE" -eq 1 ]; then
         "${COMMON_FLAGS[@]}" \
         bash
 else
+    echo "Starting container for $NAME..."
     "${PODMAN_RUN[@]}" -i --rm \
+        -v "$(realpath "$SPEC/init.sh"):/init.sh:ro" \
         "${COMMON_FLAGS[@]}" \
         dbus-run-session -- bash /init.sh
 fi
