@@ -4,6 +4,16 @@ WAYLAND_SOCK="${XDG_RUNTIME_DIR}/wayland-0"
 
 set -e
 
+REBUILD=0
+
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --rebuild) REBUILD=1 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 NAME="$1"
 SPEC="./specs/$NAME"
 
@@ -12,10 +22,21 @@ if [ ! -d "$SPEC" ]; then
     exit 1
 fi
 
-# Build image if it doesn't exist
-if ! podman image exists "localhost/wayland-hook:$NAME"; then
-    echo "Image wayland-hook:$NAME not found, building..."
+# Build image if it doesn't exist (or rebuild is forced)
+if [ "$REBUILD" -eq 1 ] || ! podman image exists "localhost/wayland-hook:$NAME"; then
+    [ "$REBUILD" -eq 1 ] && echo "Rebuilding image wayland-hook:$NAME..." \
+                         || echo "Image wayland-hook:$NAME not found, building..."
     ./build "$NAME"
+fi
+
+# Auto-export desktop entry if spec provides one
+if [ -f "$SPEC/desktop" ]; then
+    DEST="$HOME/.local/share/applications/contain-$NAME.desktop"
+    LAUNCH_PATH="$(realpath "$0")"
+    {
+        cat "$SPEC/desktop"
+        echo "Exec=$LAUNCH_PATH $NAME"
+    } > "$DEST"
 fi
 
 mkdir -p "./Home/$NAME"

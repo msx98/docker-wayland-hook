@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=VSCode (Contained)
+Icon=com.visualstudio.code
+Terminal=false
+Categories=Development;IDE;TextEditor;
+StartupWMClass=Code
