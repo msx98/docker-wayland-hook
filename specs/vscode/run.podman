@@ -2,3 +2,4 @@
 --shm-size=1g
 --cap-add=SYS_CHROOT
 --volume=${HOME}/Repositories:/home/user/Repositories
+--volume=${HOME}/Repositories:${HOME}/Repositories

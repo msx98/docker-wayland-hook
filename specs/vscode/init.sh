@@ -1,1 +1,1 @@
-code --wait
+code --wait --verbose
