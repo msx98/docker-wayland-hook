@@ -1,1 +1,1 @@
-code --wait --verbose
+code --wait --verbose --password-store=gnome-libsecret
