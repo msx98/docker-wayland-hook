@@ -68,15 +68,9 @@ mkdir -p "$CONTAIN_HOME"
 chmod 777 "$CONTAIN_HOME"
 
 # Load spec files
-#readarray -t CMD < <(xargs -n1 < "$SPEC/run.args")
-mapfile -t CMD          < "$SPEC/run.args"
 mapfile -t DBUS_NAMES   < "$SPEC/run.dbus"
 mapfile -t PODMAN_EXTRA < <([ -f "$SPEC/run.podman" ] && grep -v '^#' "$SPEC/run.podman" || true)
 
-# Strip blank lines
-CMD=("${CMD[@]//[$'\n\r']/}")
-CMD=("${CMD[@]}" )
-readarray -t CMD < <(printf '%s\n' "${CMD[@]}" | grep -v '^$')
 readarray -t DBUS_NAMES < <(printf '%s\n' "${DBUS_NAMES[@]}" | grep -v '^$')
 readarray -t PODMAN_EXTRA < <(printf '%s\n' "${PODMAN_EXTRA[@]}" | grep -v '^$' | envsubst)
 
@@ -87,7 +81,7 @@ setfacl -m u:100999:rw "${WAYLAND_SOCK}"
 
 # Start D-Bus proxy
 if [ "$DIRECT_DBUS" -eq 1 ]; then
-    DBUS_PROXY_SOCK="/run/user/$UID_HOST/bus"
+    DBUS_PROXY_SOCK="/run/user/$UID_GUEST/bus"
 else
 
 DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
@@ -102,13 +96,11 @@ while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
     DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
 fi
 
-[ "$SHELL_MODE" -eq 1 ] && FINAL_CMD=(bash) || FINAL_CMD=("${CMD[@]}")
-[ "$SHELL_MODE" -eq 1 ] && TTY_FLAG="-it" || TTY_FLAG=""
-
 PODMAN_RUN=("podman" "run")
 
 # Flags shared between postbuild and normal run
-COMMON_FLAGS=("--name" "contain-$NAME")
+COMMON_FLAGS=()
+#COMMON_FLAGS+=("--name" "contain-$NAME")
 COMMON_FLAGS+=("--cap-drop" "ALL")
 COMMON_FLAGS+=("--security-opt" "no-new-privileges")
 COMMON_FLAGS+=("--security-opt" "label=type:container_runtime_t")
@@ -121,6 +113,7 @@ COMMON_FLAGS+=("-v" "/run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewi
 COMMON_FLAGS+=("-v" "$DBUS_PROXY_SOCK:/run/user/$UID_GUEST/bus")
 COMMON_FLAGS+=("-v" "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native")
 COMMON_FLAGS+=("-v" "$CONTAIN_HOME:/home/user:Z")
+COMMON_FLAGS+=("-v" "$(realpath "$SPEC/init.sh"):/init.sh:ro")
 COMMON_FLAGS+=("-e" "GTK_THEME=Adwaita:dark")
 COMMON_FLAGS+=("-e" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_GUEST/bus")
 COMMON_FLAGS+=("-e" "PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native")
@@ -134,7 +127,7 @@ echo "Adding extra podman flag: $extra"
 done
 COMMON_FLAGS+=("$IMAGE")
 
-echo "${PODMAN_RUN[@]}" -i --rm "${COMMON_FLAGS[@]}" dbus-run-session -- "${CMD[@]}"
+echo "${PODMAN_RUN[@]}" -i --rm "${COMMON_FLAGS[@]}" dbus-run-session -- bash /init.sh
 
 if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
     echo "Running postbuild script for $NAME..."
@@ -152,5 +145,5 @@ if [ "$SHELL_MODE" -eq 1 ]; then
 else
     "${PODMAN_RUN[@]}" -i --rm \
         "${COMMON_FLAGS[@]}" \
-        dbus-run-session -- "${CMD[@]}"
+        dbus-run-session -- bash /init.sh
 fi
