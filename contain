@@ -2,11 +2,21 @@
 
 set -e
 
+SCRIPT_PATH="$(realpath "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+
 REBUILD=0
+SHELL_MODE=0
+UPDATE=0
+DIRECT_DBUS=0
 
 while [[ "$1" == --* ]]; do
     case "$1" in
         --rebuild) REBUILD=1 ;;
+        --build) REBUILD=1 ;;
+        --shell)   SHELL_MODE=1 ;;
+        --update)  UPDATE=1 ;;
+        --dbus)    DIRECT_DBUS=1 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
@@ -15,7 +25,8 @@ done
 NAME="$1"
 SPEC="./specs/$NAME"
 IMAGE="localhost/contain:$NAME"
-CONTAIN_HOME="$HOME/.local/share/contain/$NAME"
+CONTAIN_ROOTFS="$HOME/.local/share/contain/$NAME"
+CONTAIN_HOME="${CONTAIN_ROOTFS}/home/user"
 DESKTOP_ENTRY_DIR=${DESKTOP_ENTRY_DIR:-"$HOME/.local/share/applications"}
 UID_HOST=$(id -u)
 UID_GUEST=${UID_GUEST:-$UID_HOST}
@@ -30,19 +41,24 @@ if [ ! -d "$SPEC" ]; then
 fi
 
 # Build image if it doesn't exist (or rebuild is forced)
-if [ "$REBUILD" -eq 1 ] || ! podman image exists "$IMAGE"; then
-    [ "$REBUILD" -eq 1 ] && echo "Rebuilding image $IMAGE..." \
-                         || echo "Image $IMAGE not found, building..."
+if ! podman image exists "$IMAGE"; then
+    echo "Image $IMAGE not found!"
+    REBUILD=1
+fi
+
+if [ "$REBUILD" -eq 1 ]; then
+    echo "Building image $IMAGE..."
     ./build "$NAME"
+    UPDATE=1
 fi
 
 # Auto-export desktop entry if spec provides one
 if [ -f "$SPEC/desktop" ]; then
     DEST="$DESKTOP_ENTRY_DIR/contain-$NAME.desktop"
-    LAUNCH_PATH="$(realpath "$0")"
     {
         cat "$SPEC/desktop"
-        echo "Exec=$LAUNCH_PATH $NAME"
+        echo "Path=$SCRIPT_DIR"
+        echo "Exec=$SCRIPT_PATH $NAME"
     } > "$DEST"
     update-desktop-database "$DESKTOP_ENTRY_DIR"
     echo "Installed desktop entry: $DEST"
@@ -52,6 +68,7 @@ mkdir -p "$CONTAIN_HOME"
 chmod 777 "$CONTAIN_HOME"
 
 # Load spec files
+#readarray -t CMD < <(xargs -n1 < "$SPEC/run.args")
 mapfile -t CMD          < "$SPEC/run.args"
 mapfile -t DBUS_NAMES   < "$SPEC/run.dbus"
 mapfile -t PODMAN_EXTRA < <([ -f "$SPEC/run.podman" ] && grep -v '^#' "$SPEC/run.podman" || true)
@@ -69,6 +86,10 @@ RENDER_GID=$(getent group render | cut -d: -f3)
 setfacl -m u:100999:rw "${WAYLAND_SOCK}"
 
 # Start D-Bus proxy
+if [ "$DIRECT_DBUS" -eq 1 ]; then
+    DBUS_PROXY_SOCK="/run/user/$UID_HOST/bus"
+else
+
 DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
 PROXY_ARGS=(--filter)
 for name in "${DBUS_NAMES[@]}"; do
@@ -78,28 +99,58 @@ xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_PROXY_SOCK" "${PROXY_ARGS[@]}"
 DBUS_PROXY_PID=$!
 trap "kill $DBUS_PROXY_PID 2>/dev/null; rm -f $DBUS_PROXY_SOCK" EXIT
 while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
+    DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
+fi
 
-echo "Running podman run"
-podman run -i --rm \
-  --security-opt label=type:container_runtime_t \
-  --name "contain-$NAME" \
-  --cap-drop ALL \
-  --security-opt no-new-privileges \
-  --group-add "$RENDER_GID" \
-  --userns keep-id \
-  --net pasta \
-  -v "${WAYLAND_SOCK}":/run/user/$UID_GUEST/$WAYLAND_DISPLAY:ro \
-  -v /run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw \
-  -v "$DBUS_PROXY_SOCK":/run/user/$UID_GUEST/bus \
-  -v "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native" \
-  -v "$CONTAIN_HOME":/home/user:Z \
-  -e GTK_THEME="Adwaita:dark" \
-  -e DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$UID_GUEST/bus" \
-  -e PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native \
-  -e PIPEWIRE_REMOTE=/run/user/$UID_GUEST/pipewire-0 \
-  -e XDG_RUNTIME_DIR=/run/user/$UID_GUEST \
-  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
-  -e PIPEWIRE_REMOTE=unix:/run/user/$UID_GUEST/pipewire-0 \
-  "${PODMAN_EXTRA[@]}" \
-  $IMAGE \
-  dbus-run-session -- "${CMD[@]}"
+[ "$SHELL_MODE" -eq 1 ] && FINAL_CMD=(bash) || FINAL_CMD=("${CMD[@]}")
+[ "$SHELL_MODE" -eq 1 ] && TTY_FLAG="-it" || TTY_FLAG=""
+
+PODMAN_RUN=("podman" "run")
+
+# Flags shared between postbuild and normal run
+COMMON_FLAGS=("--name" "contain-$NAME")
+COMMON_FLAGS+=("--cap-drop" "ALL")
+COMMON_FLAGS+=("--security-opt" "no-new-privileges")
+COMMON_FLAGS+=("--security-opt" "label=type:container_runtime_t")
+#COMMON_FLAGS+=("--cap-add" "ALL")
+COMMON_FLAGS+=("--group-add" "$RENDER_GID")
+COMMON_FLAGS+=("--userns" "keep-id")
+COMMON_FLAGS+=("--net" "pasta")
+COMMON_FLAGS+=("-v" "${WAYLAND_SOCK}:/run/user/$UID_GUEST/$WAYLAND_DISPLAY:ro")
+COMMON_FLAGS+=("-v" "/run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw")
+COMMON_FLAGS+=("-v" "$DBUS_PROXY_SOCK:/run/user/$UID_GUEST/bus")
+COMMON_FLAGS+=("-v" "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native")
+COMMON_FLAGS+=("-v" "$CONTAIN_HOME:/home/user:Z")
+COMMON_FLAGS+=("-e" "GTK_THEME=Adwaita:dark")
+COMMON_FLAGS+=("-e" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_GUEST/bus")
+COMMON_FLAGS+=("-e" "PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native")
+COMMON_FLAGS+=("-e" "PIPEWIRE_REMOTE=/run/user/$UID_GUEST/pipewire-0")
+COMMON_FLAGS+=("-e" "XDG_RUNTIME_DIR=/run/user/$UID_GUEST")
+COMMON_FLAGS+=("-e" "WAYLAND_DISPLAY=$WAYLAND_DISPLAY")
+COMMON_FLAGS+=("-e" "XDG_SESSION_TYPE=wayland")
+for extra in "${PODMAN_EXTRA[@]}"; do
+echo "Adding extra podman flag: $extra"
+    COMMON_FLAGS+=("$extra")
+done
+COMMON_FLAGS+=("$IMAGE")
+
+echo "${PODMAN_RUN[@]}" -i --rm "${COMMON_FLAGS[@]}" dbus-run-session -- "${CMD[@]}"
+
+if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
+    echo "Running postbuild script for $NAME..."
+    "${PODMAN_RUN[@]}" -it --rm \
+        --user 0:0 \
+        -v "$(realpath "$SPEC/setup.sh"):/setup.sh:ro" \
+        "${COMMON_FLAGS[@]}"  \
+        bash /setup.sh
+fi
+
+if [ "$SHELL_MODE" -eq 1 ]; then
+    "${PODMAN_RUN[@]}" -it --rm \
+        "${COMMON_FLAGS[@]}" \
+        bash
+else
+    "${PODMAN_RUN[@]}" -i --rm \
+        "${COMMON_FLAGS[@]}" \
+        dbus-run-session -- "${CMD[@]}"
+fi

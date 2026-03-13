@@ -1,4 +1,2 @@
 code
---ozone-platform-hint=auto
 --ozone-platform=wayland
---no-sandbox

@@ -2,9 +2,14 @@
 
 set -e
 
+REBUILD_BASE=0
+if [[ "$1" == "--base" ]]; then
+    REBUILD_BASE=1
+    shift
+fi
+
 if [ -z "$1" ]; then
-    echo "Usage: ./build <name>"
-    echo "  ./build base/ubuntu  - build contain-base:ubuntu"
+    echo "Usage: ./build [--base] <name>"
     echo "  ./build chrome       - build contain:chrome (auto-builds base if needed)"
     exit 1
 fi
