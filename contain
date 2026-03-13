@@ -105,11 +105,11 @@ COMMON_FLAGS+=("--cap-drop" "ALL")
 COMMON_FLAGS+=("--security-opt" "no-new-privileges")
 COMMON_FLAGS+=("--security-opt" "label=type:container_runtime_t")
 #COMMON_FLAGS+=("--cap-add" "ALL")
-COMMON_FLAGS+=("--group-add" "$RENDER_GID")
 COMMON_FLAGS+=("--userns" "keep-id")
+COMMON_FLAGS+=("--group-add" "$RENDER_GID")
 COMMON_FLAGS+=("--net" "pasta")
 COMMON_FLAGS+=("-v" "${WAYLAND_SOCK}:/run/user/$UID_GUEST/$WAYLAND_DISPLAY:ro")
-COMMON_FLAGS+=("-v" "/run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw")
+COMMON_FLAGS+=("-v" "/run/user/$UID_HOST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw")
 COMMON_FLAGS+=("-v" "$DBUS_PROXY_SOCK:/run/user/$UID_GUEST/bus")
 COMMON_FLAGS+=("-v" "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native")
 COMMON_FLAGS+=("-v" "$CONTAIN_HOME:/home/user:Z")
@@ -138,9 +138,11 @@ if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
 fi
 
 if [ "$SHELL_MODE" -eq 1 ]; then
+    echo "Starting shell in container for $NAME..."
     "${PODMAN_RUN[@]}" -it --rm \
         "${COMMON_FLAGS[@]}" \
-        bash
+        dbus-run-session -- bash
+        
 else
     echo "Starting container for $NAME..."
     "${PODMAN_RUN[@]}" -i --rm \
