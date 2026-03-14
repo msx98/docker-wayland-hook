@@ -1,1 +1,1 @@
-firefox --name=Firefox
+firefox --name=org.mozilla.firefox

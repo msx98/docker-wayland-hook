@@ -4,4 +4,4 @@ Name=Firefox
 Icon=org.mozilla.firefox
 Terminal=false
 Categories=Network;WebBrowser;
-StartupWMClass=Firefox
+StartupWMClass=org.mozilla.firefox
