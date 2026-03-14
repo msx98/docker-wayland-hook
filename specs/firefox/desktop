@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Firefox (Contained)
+Name=Firefox
 Icon=org.mozilla.firefox
 Terminal=false
 Categories=Network;WebBrowser;

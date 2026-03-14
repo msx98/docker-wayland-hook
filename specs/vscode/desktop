@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=VSCode (Contained)
+Name=VSCode
 Icon=com.visualstudio.code
 Terminal=false
 Categories=Development;IDE;TextEditor;

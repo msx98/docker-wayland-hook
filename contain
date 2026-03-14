@@ -102,12 +102,18 @@ fi
 
 # Auto-export desktop entry if spec provides one
 if [ -f "$SPEC/desktop" ]; then
-    DEST="$DESKTOP_ENTRY_DIR/contain-$NAME.desktop"
+    DEST="$DESKTOP_ENTRY_DIR/contain-$NAME-$INSTANCE.desktop"
     {
         cat "$SPEC/desktop"
         echo "Path=$SCRIPT_DIR"
-        echo "Exec=$SCRIPT_PATH $NAME"
+        echo "Exec=contain --name $INSTANCE $NAME"
     } > "$DEST"
+    if [ "$NAME" == "$INSTANCE" ]; then
+        SUFFIX=" (Default)"
+    else
+        SUFFIX=" ($INSTANCE)"
+    fi
+    sed -i -E "s/Name=(.*)/Name=\1$SUFFIX/" "$DEST"
     update-desktop-database "$DESKTOP_ENTRY_DIR"
     echo "Installed desktop entry: $DEST"
 fi
