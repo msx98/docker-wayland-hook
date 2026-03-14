@@ -27,5 +27,5 @@ RUN useradd -m -s /bin/bash chrome
 # Add sub to group user so that it can access the home directory
 RUN usermod -aG user chrome
 # Run as the new user by default
-USER user
+#USER chrome
 WORKDIR /home/user

@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""
+Unix domain socket proxy with SCM_RIGHTS (file descriptor) passthrough.
+
+Listens on <listen-path> with 0777 permissions so any UID can connect,
+and forwards each connection to <upstream-path>.  File descriptors sent
+via ancillary SCM_RIGHTS messages are received, re-sent to the other
+side, and then closed in this process — so the two endpoints share fds
+directly without leaking them here.
+
+Works for Wayland, PipeWire, and PulseAudio (all SOCK_STREAM).
+
+Usage:
+    proxy-socket <listen-path> <upstream-path>
+"""
+
+import os
+import socket
+import struct
+import sys
+import threading
+
+RECV_BUF = 65536
+# Enough ancillary space for 253 fds (kernel maximum per sendmsg)
+CMSG_BUF = socket.CMSG_SPACE(253 * 4)
+
+
+def _close_fds(fds: list[int]) -> None:
+    for fd in fds:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _extract_fds(ancdata) -> list[int]:
+    fds: list[int] = []
+    for cmsg_level, cmsg_type, cmsg_data in ancdata:
+        if cmsg_level == socket.SOL_SOCKET and cmsg_type == socket.SCM_RIGHTS:
+            n = len(cmsg_data) // 4
+            fds.extend(struct.unpack(f"{n}i", cmsg_data[: n * 4]))
+    return fds
+
+
+def _forward(src: socket.socket, dst: socket.socket) -> None:
+    """Pump data (and any attached fds) from src to dst until EOF."""
+    while True:
+        try:
+            data, ancdata, _flags, _addr = src.recvmsg(RECV_BUF, CMSG_BUF)
+        except OSError:
+            break
+
+        if not data and not ancdata:
+            break
+
+        fds = _extract_fds(ancdata)
+        new_anc = []
+        if fds:
+            new_anc = [
+                (
+                    socket.SOL_SOCKET,
+                    socket.SCM_RIGHTS,
+                    struct.pack(f"{len(fds)}i", *fds),
+                )
+            ]
+
+        try:
+            dst.sendmsg([data], new_anc)
+        except OSError:
+            _close_fds(fds)
+            break
+        else:
+            # fds have been duped into dst's process by the kernel; close ours
+            _close_fds(fds)
+
+    try:
+        dst.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
+
+
+def _handle(client: socket.socket, upstream_path: str) -> None:
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        server.connect(upstream_path)
+    except OSError as exc:
+        print(f"proxy-socket: connect {upstream_path}: {exc}", file=sys.stderr)
+        client.close()
+        return
+
+    t1 = threading.Thread(target=_forward, args=(client, server), daemon=True)
+    t2 = threading.Thread(target=_forward, args=(server, client), daemon=True)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    client.close()
+    server.close()
+
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <listen-path> <upstream-path>", file=sys.stderr)
+        sys.exit(1)
+
+    listen_path, upstream_path = sys.argv[1], sys.argv[2]
+
+    if os.path.exists(listen_path):
+        os.unlink(listen_path)
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.bind(listen_path)
+    os.chmod(listen_path, 0o777)
+    sock.listen(16)
+
+    print(f"proxy-socket: {listen_path} -> {upstream_path}", file=sys.stderr, flush=True)
+
+    try:
+        while True:
+            client, _ = sock.accept()
+            threading.Thread(
+                target=_handle, args=(client, upstream_path), daemon=True
+            ).start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            os.unlink(listen_path)
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    main()

@@ -10,6 +10,7 @@ REBUILD=0
 SHELL_MODE=0
 UPDATE=0
 DIRECT_DBUS=0
+INSTANCE=""
 
 while [[ "$1" == --* ]]; do
     case "$1" in
@@ -19,10 +20,16 @@ while [[ "$1" == --* ]]; do
         --update)  UPDATE=1 ;;
         --setup)  UPDATE=1 ;;
         --dbus)    DIRECT_DBUS=1 ;;
+        --name) shift; INSTANCE="$1" ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
     shift
 done
+NAME="$1"
+if [ "$INSTANCE" == "" ]; then
+    INSTANCE="$NAME"
+fi
+echo "Executing $NAME ($INSTANCE)"
 
 TMP_DIR=$(mktemp -d)
 DBUS_PROXY_SOCK="$TMP_DIR/dbus.sock"
@@ -56,14 +63,13 @@ cleanup() {
     rm -rf "$TMP_DIR"
     echo "Cleanup complete."
 }
-trap cleanup EXIT
 
-NAME="$1"
-INSTANCE=${INSTANCE:-$NAME}
+
 SPEC="$SPECS_DIR/$NAME"
 IMAGE="localhost/contain:$NAME"
 CONTAIN_ROOTFS="$HOME/.local/share/contain/$INSTANCE"
 CONTAIN_HOME_GUEST="/home/user"
+export CONTAIN_HOME_GUEST
 CONTAIN_HOME="${CONTAIN_ROOTFS}/${CONTAIN_HOME_GUEST#"/"}"
 DESKTOP_ENTRY_DIR=${DESKTOP_ENTRY_DIR:-"$HOME/.local/share/applications"}
 UID_HOST=$(id -u)
@@ -79,6 +85,8 @@ if [ ! -d "$SPEC" ]; then
     echo "Error: no spec found at $SPEC"
     exit 1
 fi
+
+trap cleanup EXIT
 
 # Build image if it doesn't exist (or rebuild is forced)
 if ! podman image exists "$IMAGE"; then
@@ -106,7 +114,7 @@ fi
 
 mkdir -p "$CONTAIN_HOME"
 #mkdir -p "$CONTAIN_ROOTFS/runtime/dconf"
-chmod 777 "$CONTAIN_HOME"
+#chmod 777 "$CONTAIN_HOME"
 
 # Load spec files
 mapfile -t DBUS_NAMES   < "$SPEC/run.dbus"
@@ -126,10 +134,13 @@ else
     for name in "${DBUS_NAMES[@]}"; do
         PROXY_ARGS+=("--talk=$name")
     done
-    xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_PROXY_SOCK" "${PROXY_ARGS[@]}" &
+    DBUS_NATIVE_PROXY_SOCK="$DBUS_PROXY_SOCK.native"
+    xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_NATIVE_PROXY_SOCK" "${PROXY_ARGS[@]}" &
     KILL_PIDS+=($!)
-    while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
-    #chmod 777 "$DBUS_PROXY_SOCK"
+    while [ ! -S "$DBUS_NATIVE_PROXY_SOCK" ]; do sleep 0.1; done
+    #"$SCRIPT_DIR/proxy-socket" "$DBUS_PROXY_SOCK" "$DBUS_NATIVE_PROXY_SOCK" &
+    #KILL_PIDS+=($!)
+    DBUS_PROXY_SOCK="$DBUS_NATIVE_PROXY_SOCK"
 fi
 
 # Start socket proxies for Wayland, PulseAudio, and PipeWire.
@@ -143,7 +154,7 @@ KILL_PIDS+=($!)
 "$SCRIPT_DIR/proxy-socket" "$PIPEWIRE_PROXY_SOCK" "${XDG_RUNTIME_DIR}/pipewire-0" &
 KILL_PIDS+=($!)
 
-for sock in "$WAYLAND_PROXY_SOCK" "$PULSE_PROXY_SOCK" "$PIPEWIRE_PROXY_SOCK"; do
+for sock in "$DBUS_PROXY_SOCK" "$WAYLAND_PROXY_SOCK" "$PULSE_PROXY_SOCK" "$PIPEWIRE_PROXY_SOCK"; do
     while [ ! -S "$sock" ]; do sleep 0.05; done
 done
 
@@ -157,7 +168,6 @@ COMMON_FLAGS+=("--security-opt" "no-new-privileges")
 COMMON_FLAGS+=("--security-opt" "label=type:container_runtime_t")
 #COMMON_FLAGS+=("--cap-add" "ALL")
 COMMON_FLAGS+=("--userns" "keep-id") #:uid=$UID_GUEST,gid=$UID_GUEST")
-COMMON_FLAGS+=("--group-add" "$RENDER_GID")
 COMMON_FLAGS+=("--net" "pasta")
 COMMON_FLAGS+=("--tmpfs" "$XDG_RUNTIME_DIR_GUEST:rw,mode=1777")
 COMMON_FLAGS+=("-v" "$WAYLAND_PROXY_SOCK:$XDG_RUNTIME_DIR_GUEST/$WAYLAND_DISPLAY:ro")
@@ -221,5 +231,5 @@ else
         -v "$(realpath "$SPEC/init.sh"):/init.sh:ro" \
         --cap-drop ALL \
         "${COMMON_FLAGS[@]}" \
-        /init.sh
+        dbus-run-session -- bash /init.sh
 fi
