@@ -1,0 +1,17 @@
+#!/bin/bash
+
+SCRIPT_PATH="$(realpath "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+
+mkdir -p $SCRIPT_DIR/bin
+[ -L "$SCRIPT_DIR/bin/contain" ] || ln -s "$SCRIPT_DIR/contain" "$SCRIPT_DIR/bin/contain"
+
+# Add script dir to path, manage by ```# >>> contain initialize` and `# <<< contain initialize` markers
+# 1. Remove everything between the markers if they exist (including the markers)
+# 2. Add the markers and the new path to the script dir
+sed -i '/# >>> contain initialize/,/# <<< contain initialize/d' ~/.bashrc
+cat << EOF >> ~/.bashrc
+# >>> contain initialize
+export PATH="$SCRIPT_DIR/bin:\$PATH"
+# <<< contain initialize
+EOF

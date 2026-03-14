@@ -76,3 +76,5 @@ EOF
 #install_or_update_conda "/home/user/.miniconda3"
 #install_texlive "/home/user/texlive"
 setup_vscode
+
+#conda create -n py312 python=3.12 pandas numpy matplotlib seaborn scikit-learn jupyterlab ipykernel torch tqdm transformers huggingface_hub -y
