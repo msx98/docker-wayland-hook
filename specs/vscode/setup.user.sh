@@ -34,7 +34,7 @@ install_texlive() {
         fi
         cd ${TEXLIVE_INSTALLER_DIR}
         echo "Installing TexLive (this may take a while)..."
-        perl install-tl --no-interaction --scheme=full --location=https://mirror.ctan.org/systems/texlive/tlnet \
+        perl install-tl --no-interaction --scheme=full --location=https://mirror.rabisu.com/mirrors/CTAN/systems/texlive/tlnet \
             --texdir=${TEXLIVE_DIR} \
             --texmfvar=${TEXLIVE_DIR}/texmf-var \
             --texmfconfig=${TEXLIVE_DIR}/texmf-config
@@ -50,5 +50,26 @@ install_texlive() {
     fi
 }
 
+setup_vscode() {
+    if [ ! -d "/home/user/.config/Code" ]; then
+        echo "Setting up VSCode configuration..."
+        mkdir -p /home/user/.config/Code/User
+        cat > /home/user/.config/Code/User/settings.json << 'EOF'
+{
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.profiles.linux": {
+        "bash": {
+            "path": "/bin/bash"
+        }
+    }
+}
+EOF
+    else
+        echo "VSCode configuration already exists."
+    fi
+}
+
+
 #install_or_update_conda "/home/user/.miniconda3"
-install_texlive "/home/user/texlive"
+#install_texlive "/home/user/texlive"
+setup_vscode

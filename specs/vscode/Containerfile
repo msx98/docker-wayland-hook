@@ -10,11 +10,22 @@ RUN wget -4 -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearm
 RUN apt-get update && apt-get install -y code --no-install-recommends
 
 RUN apt-get install -y \
-    git cmake build-essential curl unzip \
-    gcc g++
-
-RUN apt-get install -y \
+    bash git cmake build-essential curl unzip \
+    gcc g++ \
+    vim nano \
     libx11-dev libxkbfile-dev libsecret-1-dev \
-    libsecret-1-0
+    libsecret-1-0 \
+    python3 python3-pip \
+    nodejs npm \
+    lldb \
+    valgrind \
+    gdb \
+    strace \
+    ltrace \
+    net-tools \
+    iputils-ping \
+    procps \
+    htop \
+    tcpdump
 
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
