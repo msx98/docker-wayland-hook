@@ -40,13 +40,16 @@ install_texlive() {
             --texmfconfig=${TEXLIVE_DIR}/texmf-config
         echo "Cleaning up TexLive installer..."
         rm -rf /home/user/tmp
+        cat << 'EOF' > /home/user/.bashrc
+# TexLive environment variables
+export TEXLIVE_DIR="$HOME/texlive"
+export MANPATH="\$TEXLIVE_DIR/texmf-dist/doc/man:\$MANPATH"
+export INFOPATH="\$TEXLIVE_DIR/texmf-dist/doc/info:\$INFOPATH"
+export PATH="\$TEXLIVE_DIR/bin/x86_64-linux:\$PATH"
+EOF
         echo "TexLive installation complete."
     else
         echo "TexLive already installed."
-    fi
-    if [ ! -e "/usr/local/texlive" ]; then
-        echo "Creating symlink /usr/local/texlive -> ${TEXLIVE_DIR}..."
-        ln -s "${TEXLIVE_DIR}" /usr/local/texlive
     fi
 }
 
