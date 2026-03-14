@@ -1,0 +1,22 @@
+#!/bin/bash
+
+CONTENT_DIR="$HOME/.local/share/contain"
+if [ ! -d "$CONTENT_DIR" ]; then
+    echo "Content directory not found at $CONTENT_DIR."
+    exit 1
+fi
+
+NAME=$1
+if [ -z "$NAME" ]; then
+    echo "Usage: $0 <container-name>"
+    exit 1
+fi
+
+TARGET="$CONTENT_DIR/$NAME"
+if [ ! -d "$TARGET" ]; then
+    echo "Container $NAME not found at $TARGET."
+    ls "$CONTENT_DIR"
+    exit 1
+fi
+
+bash -c "cd $TARGET && exec bash"

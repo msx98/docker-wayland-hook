@@ -5,6 +5,7 @@ SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 
 mkdir -p $SCRIPT_DIR/bin
 [ -L "$SCRIPT_DIR/bin/contain" ] || ln -s "$SCRIPT_DIR/contain" "$SCRIPT_DIR/bin/contain"
+[ -L "$SCRIPT_DIR/bin/cd-contain" ] || ln -s "$SCRIPT_DIR/cd-contain" "$SCRIPT_DIR/bin/cd-contain"
 
 # Add script dir to path, manage by ```# >>> contain initialize` and `# <<< contain initialize` markers
 # 1. Remove everything between the markers if they exist (including the markers)
