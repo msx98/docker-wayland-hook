@@ -22,3 +22,10 @@ RUN apt-get update && apt-get install -y \
 # This tells Chrome to use the Wayland backend instead of X11
 ENV CHROME_FLAGS="--ozone-platform-hint=auto --ozone-platform=wayland --gtk-version=4"
 
+# New user "chrome" with no home directory and no password
+RUN useradd -m -s /bin/bash chrome
+# Add sub to group user so that it can access the home directory
+RUN usermod -aG user chrome
+# Run as the new user by default
+USER user
+WORKDIR /home/user
