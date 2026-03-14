@@ -16,6 +16,7 @@ while [[ "$1" == --* ]]; do
         --build) REBUILD=1 ;;
         --shell)   SHELL_MODE=1 ;;
         --update)  UPDATE=1 ;;
+        --setup)  UPDATE=1 ;;
         --dbus)    DIRECT_DBUS=1 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -133,6 +134,14 @@ if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
     "${PODMAN_RUN[@]}" -it --rm \
         --user 0:0 \
         -v "$(realpath "$SPEC/setup.sh"):/setup.sh:ro" \
+        "${COMMON_FLAGS[@]}"  \
+        dbus-run-session -- bash /setup.sh
+fi
+
+if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.user.sh" ]; then
+    echo "Running postbuild user script for $NAME..."
+    "${PODMAN_RUN[@]}" -it --rm \
+        -v "$(realpath "$SPEC/setup.user.sh"):/setup.sh:ro" \
         "${COMMON_FLAGS[@]}"  \
         dbus-run-session -- bash /setup.sh
 fi
