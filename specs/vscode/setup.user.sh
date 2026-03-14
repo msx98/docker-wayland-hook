@@ -28,13 +28,16 @@ install_texlive() {
         TAR_NAME="install-tl-unx.tar.gz"
         if [ ! -f "/home/user/tmp/${TAR_NAME}" ]; then
             echo "Downloading TexLive installer..."
-            wget -4 -q http://ctan.math.utah.edu/ctan/tex-archive/systems/texlive/tlnet/install-tl-unx.tar.gz -O /home/user/tmp/${TAR_NAME}
+            wget -4 -q https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz -O /home/user/tmp/${TAR_NAME}
             echo "Extracting TexLive installer..."
             tar -xzf /home/user/tmp/${TAR_NAME} -C ${TEXLIVE_INSTALLER_DIR} --strip-components=1
         fi
         cd ${TEXLIVE_INSTALLER_DIR}
         echo "Installing TexLive (this may take a while)..."
-        perl install-tl --no-interaction --scheme=full --texdir=${TEXLIVE_DIR}
+        perl install-tl --no-interaction --scheme=full --location=https://mirror.ctan.org/systems/texlive/tlnet \
+            --texdir=${TEXLIVE_DIR} \
+            --texmfvar=${TEXLIVE_DIR}/texmf-var \
+            --texmfconfig=${TEXLIVE_DIR}/texmf-config
         echo "Cleaning up TexLive installer..."
         rm -rf /home/user/tmp
         echo "TexLive installation complete."
