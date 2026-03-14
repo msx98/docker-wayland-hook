@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -e
+
+REBUILD_BASE=0
+if [[ "$1" == "--base" ]]; then
+    REBUILD_BASE=1
+    shift
+fi
+
+if [ -z "$1" ]; then
+    echo "Usage: ./build [--base] <name>"
+    echo "  ./build chrome       - build contain:chrome (auto-builds base if needed)"
+    exit 1
+fi
+
+NAME="$1"
+SPEC_DIR="./specs/$NAME"
+CONTAINERFILE="$SPEC_DIR/Containerfile"
+
+if [ ! -f "$CONTAINERFILE" ]; then
+    echo "Error: no Containerfile at $CONTAINERFILE"
+    exit 1
+fi
+
+# Read build.args: TAG overrides the output tag, BASE triggers auto-build
+TAG=""
+BASE=""
+if [ -f "$SPEC_DIR/build.args" ]; then
+    while IFS='=' read -r key value; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        case "$key" in
+            TAG)  TAG="$value" ;;
+            BASE) BASE="$value" ;;
+        esac
+    done < "$SPEC_DIR/build.args"
+fi
+
+# Default tag: base/* -> contain-base:<name>, else contain:<name>
+if [ -z "$TAG" ]; then
+    if [[ "$NAME" == base/* ]]; then
+        TAG="contain-base:${NAME#base/}"
+    else
+        TAG="contain:$NAME"
+    fi
+fi
+
+# Auto-build base image if not present
+if [ -n "$BASE" ] && ! nerdctl image exists "$BASE"; then
+    BASE_NAME="${BASE#contain-base:}"
+    echo "Base image $BASE not found, building..."
+    "$0" "base/$BASE_NAME"
+fi
+
+BUILD_ARG_FLAGS=()
+[ -n "$BASE" ] && BUILD_ARG_FLAGS+=(--build-arg "BASE=$BASE")
+
+echo "------------------------------------------"
+echo "Building $TAG from $CONTAINERFILE"
+echo "------------------------------------------"
+nerdctl build -t "$TAG" -f "$CONTAINERFILE" "$SPEC_DIR" "${BUILD_ARG_FLAGS[@]}"
+echo "Build complete: $TAG"

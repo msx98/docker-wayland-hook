@@ -1,0 +1,155 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_PATH="$(realpath "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+
+REBUILD=0
+SHELL_MODE=0
+UPDATE=0
+DIRECT_DBUS=0
+
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --rebuild) REBUILD=1 ;;
+        --build) REBUILD=1 ;;
+        --shell)   SHELL_MODE=1 ;;
+        --update)  UPDATE=1 ;;
+        --dbus)    DIRECT_DBUS=1 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+NAME="$1"
+SPEC="./specs/$NAME"
+IMAGE="localhost/contain:$NAME"
+CONTAIN_ROOTFS="$HOME/.local/share/contain/$NAME"
+CONTAIN_HOME="${CONTAIN_ROOTFS}/home/user"
+DESKTOP_ENTRY_DIR=${DESKTOP_ENTRY_DIR:-"$HOME/.local/share/applications"}
+UID_HOST=1000
+UID_GUEST=${UID_GUEST:-$UID_HOST}
+XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$UID_HOST}
+WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+WAYLAND_SOCK="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+
+
+if [ ! -d "$SPEC" ]; then
+    echo "Error: no spec found at $SPEC"
+    exit 1
+fi
+
+# Build image if it doesn't exist (or rebuild is forced)
+if ! nerdctl image inspect "$IMAGE" &>/dev/null; then
+    echo "Image $IMAGE not found in containerd!"
+    REBUILD=1
+fi
+
+if [ "$REBUILD" -eq 1 ]; then
+    echo "Building image $IMAGE..."
+    ./build-kata "$NAME"
+    UPDATE=1
+fi
+
+# Auto-export desktop entry if spec provides one
+if [ -f "$SPEC/desktop" ]; then
+    DEST="$DESKTOP_ENTRY_DIR/contain-kata-$NAME.desktop"
+    {
+        cat "$SPEC/desktop"
+        echo "Path=$SCRIPT_DIR"
+        echo "Exec=$SCRIPT_PATH $NAME"
+    } > "$DEST"
+    update-desktop-database "$DESKTOP_ENTRY_DIR"
+    echo "Installed desktop entry: $DEST"
+fi
+
+mkdir -p "$CONTAIN_HOME"
+chmod 777 "$CONTAIN_HOME"
+
+# Load spec files
+mapfile -t DBUS_NAMES   < "$SPEC/run.dbus"
+mapfile -t PODMAN_EXTRA < <([ -f "$SPEC/run.podman" ] && grep -v '^#' "$SPEC/run.podman" || true)
+
+readarray -t DBUS_NAMES < <(printf '%s\n' "${DBUS_NAMES[@]}" | grep -v '^$')
+readarray -t PODMAN_EXTRA < <(printf '%s\n' "${PODMAN_EXTRA[@]}" | grep -v '^$' | envsubst)
+
+# Get host GIDs
+RENDER_GID=$(getent group render | cut -d: -f3)
+
+setfacl -m u:100999:rw "${WAYLAND_SOCK}"
+
+# Start D-Bus proxy
+if [ "$DIRECT_DBUS" -eq 1 ]; then
+    DBUS_PROXY_SOCK="/run/user/$UID_GUEST/bus"
+else
+
+DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
+PROXY_ARGS=(--filter)
+for name in "${DBUS_NAMES[@]}"; do
+    PROXY_ARGS+=("--talk=$name")
+done
+xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$DBUS_PROXY_SOCK" "${PROXY_ARGS[@]}" &
+DBUS_PROXY_PID=$!
+trap "kill $DBUS_PROXY_PID 2>/dev/null; rm -f $DBUS_PROXY_SOCK" EXIT
+while [ ! -S "$DBUS_PROXY_SOCK" ]; do sleep 0.1; done
+    DBUS_PROXY_SOCK="/tmp/dbus-proxy-$NAME"
+fi
+
+export CNI_PATH="$SCRIPT_DIR/bin/cni-plugins-linux-amd64"
+
+KATA_CGROUP_PARENT="/user.slice/user-$(id -u).slice/user@$(id -u).service/app.slice/containerd.service"
+PODMAN_RUN=("nerdctl" "run" "--runtime=io.containerd.kata.v2" "--cgroup-parent=$KATA_CGROUP_PARENT")
+
+# Flags shared between postbuild and normal run
+COMMON_FLAGS=()
+#COMMON_FLAGS+=("--name" "contain-$NAME")
+COMMON_FLAGS+=("--cap-drop" "ALL")
+COMMON_FLAGS+=("--security-opt" "no-new-privileges")
+# SELinux label disabled: kata VM boundary provides isolation instead
+#COMMON_FLAGS+=("--security-opt" "label=disable")
+#COMMON_FLAGS+=("--cap-add" "ALL")
+COMMON_FLAGS+=("--group-add" "$RENDER_GID")
+#COMMON_FLAGS+=("--userns" "keep-id")
+# kata VM boundary provides network isolation; use host networking to avoid CNI dependency
+COMMON_FLAGS+=("--net" "bridge")
+COMMON_FLAGS+=("-v" "${WAYLAND_SOCK}:/run/user/$UID_GUEST/$WAYLAND_DISPLAY:ro")
+COMMON_FLAGS+=("-v" "/run/user/$UID_GUEST/pipewire-0:/run/user/$UID_GUEST/pipewire-0:rw")
+COMMON_FLAGS+=("-v" "$DBUS_PROXY_SOCK:/run/user/$UID_GUEST/bus")
+COMMON_FLAGS+=("-v" "${XDG_RUNTIME_DIR}/pulse/native:/run/user/$UID_GUEST/pulse/native")
+COMMON_FLAGS+=("-v" "$CONTAIN_HOME:/home/user")
+COMMON_FLAGS+=("-e" "GTK_THEME=Adwaita:dark")
+COMMON_FLAGS+=("-e" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$UID_GUEST/bus")
+COMMON_FLAGS+=("-e" "PULSE_SERVER=unix:/run/user/$UID_GUEST/pulse/native")
+COMMON_FLAGS+=("-e" "PIPEWIRE_REMOTE=/run/user/$UID_GUEST/pipewire-0")
+COMMON_FLAGS+=("-e" "XDG_RUNTIME_DIR=/run/user/$UID_GUEST")
+COMMON_FLAGS+=("-e" "WAYLAND_DISPLAY=$WAYLAND_DISPLAY")
+COMMON_FLAGS+=("-e" "XDG_SESSION_TYPE=wayland")
+for extra in "${PODMAN_EXTRA[@]}"; do
+echo "Adding extra podman flag: $extra"
+    COMMON_FLAGS+=("$extra")
+done
+COMMON_FLAGS+=("$IMAGE")
+
+echo "${PODMAN_RUN[@]}" -i --rm "${COMMON_FLAGS[@]}" dbus-run-session -- bash /init.sh
+
+if [ "$UPDATE" -eq 1 ] && [ -f "$SPEC/setup.sh" ]; then
+    echo "Running postbuild script for $NAME..."
+    "${PODMAN_RUN[@]}" -it --rm \
+        --user 0:0 \
+        -v "$(realpath "$SPEC/setup.sh"):/setup.sh:ro" \
+        "${COMMON_FLAGS[@]}"  \
+        dbus-run-session -- bash /setup.sh
+fi
+
+if [ "$SHELL_MODE" -eq 1 ]; then
+    "${PODMAN_RUN[@]}" -it --rm \
+        "${COMMON_FLAGS[@]}" \
+        bash
+else
+    echo "Starting container for $NAME..."
+    "${PODMAN_RUN[@]}" -i --rm \
+        -v "$(realpath "$SPEC/init.sh"):/init.sh:ro" \
+        "${COMMON_FLAGS[@]}" \
+        dbus-run-session -- bash /init.sh
+fi
