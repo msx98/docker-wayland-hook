@@ -1,1 +1,1 @@
-BASE=contain-base:ubuntu
+BASE=contain-base:hard-ubuntu
